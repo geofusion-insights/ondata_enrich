@@ -8,7 +8,7 @@ import warnings
 from functools import reduce
 from datetime import datetime
 from joblib import Parallel, delayed
-from traceback import print_exc
+from traceback import format_exc, print_exc
 
 import pandas as pd
 from tqdm import tqdm
@@ -32,12 +32,15 @@ def get_point(cep, token, max_retries=5):
         raise KeyboardInterrupt
     except ConnectionError:
         if max_retries:
-            warnings.warn('Erro ao opter novamente o cep {}'.format(cep))
+            warnings.warn('Erro ao obter novamente o cep {}'.format(cep))
             return get_point(cep, token, max_retries-1)
         else:
             return {'error': 'max_retries'}
     except Exception as ex:
-        return {'error': 'error'}
+        msg = 'cep [{}] com erro: [{}]'.format(cep, format_exc())
+        if response:
+            msg += '\nresponse: [{}]'.format(response.text)
+        return {'Error geocoder': msg}
 
 def get_income(lat, lng, token):
     '''
@@ -77,7 +80,9 @@ def get_response(base_url, token, lat=None, lng=None, max_retries=5):
             warnings.warn('Erro ao obter a url \'{}\''.format(base_url))
             return get_response(base_url, token, lat, lng, max_retries - 1)
         else:
-            return {}
+            msg = 'Número máximo de 5 tentaivas para a url: [{url}] excedido'
+            msg = msg.format(url=url)
+            raise ValueError(msg)
 
 def warn_response_time(url, init):
     '''
@@ -176,15 +181,23 @@ def get_sociodemography(lat, lng, token, radius):
     Retorna o potencial de consumo de determinadas categorias, dentro de
     determinado raio.
     '''
-    type_data='sociodemography'
-    base_url =('https://api.geofusion.com.br/xray/v1/areas/surroundings/' +
-               '{type_data}/RADIUS?value={radius}&latitude={lat}&' +
-               'longitude={lng}')
-    url = base_url.format(radius=radius, lat=lat, lng=lng, type_data=type_data)
-    response = get_response(url, token)
-    data_sociodemography = json.loads(response.text)
-    sociodemography = convert_nested_dict(data_sociodemography, values=[])
-    return {'sociodemography__' + k: v for k, v in sociodemography.items()}
+    try:
+        type_data='sociodemography'
+        base_url =('https://api.geofusion.com.br/xray/v1/areas/surroundings/' +
+                   '{type_data}/RADIUS?value={radius}&latitude={lat}&' +
+                   'longitude={lng}')
+        url = base_url.format(radius=radius, lat=lat, lng=lng,
+                              type_data=type_data)
+        response = get_response(url, token)
+        data_sociodemography = json.loads(response.text)
+        sociodemography = convert_nested_dict(data_sociodemography, values=[])
+        return {'sociodemography__' + k: v for k, v in sociodemography.items()}
+    except Exception as ex:
+        msg = 'Erro ao buscar sociodemografia para a url [{}]'.format(url)
+        if response:
+            msg += '\nResposta obtida: [{}]'.format(response.text)
+        msg += '\n\n{}'.format(format_exc())
+        return {'Error sociodemografia': msg}
 
 def is_numeric(data):
     '''
@@ -226,10 +239,11 @@ def get_point_data(lat, lng, token, dispType, locomotaion, direction, radius,
     seg_intraurban = get_intraurban_segmentation(lat, lng, token)
     renda_dompp_provavel = get_income(lat, lng, token)
     pois = get_pois(lat, lng, token, dispType, locomotaion, direction, value)
-    consumption = get_consumption_potential(lat, lng, token, radius, categories)
-    sociodemography = get_sociodemography(lat, lng, token, radius)
-    return {**seg_intraurban, **renda_dompp_provavel, **pois, **consumption,
-            **sociodemography}
+    #consumption = get_consumption_potential(lat, lng, token, radius, categories)
+    #sociodemography = get_sociodemography(lat, lng, token, radius)
+    return {**seg_intraurban, **renda_dompp_provavel, **pois}
+            #**consumption, **sociodemography
+            #}
 
 def enrich_cep(cep_index, cep, token, dispType, locomotaion, direction, value,
                radius, categories):
@@ -276,12 +290,12 @@ def main(token, n_jobs=10, filename='data/raw/cep.txt', dispType='TIME',
     Pandas dataframe com os dados enriquecidos.
     '''
     df_cep = pd.read_csv('data/raw/cep.txt')
-    df_cep = df_cep.sample(frac=0.01, random_state=42)
+    #df_cep = df_cep.sample(frac=0.01, random_state=42)
     #df_cep = df_cep.sample(4, random_state=42)
     tqdm_cep = tqdm(df_cep.itertuples(), total=df_cep.shape[0], desc='cep')
     args = (token, dispType, locomotaion, direction, value, radius,
             consumption_potential_category)
-    #data = Parallel(n_jobs=n_jobs)(delayed(enrich_cep)(row.Index, row.cep, *args) for row in tqdm_cep)
-    data = [enrich_cep(row.Index, row.cep, *args) for row in tqdm_cep]
+    data = Parallel(n_jobs=n_jobs)(delayed(enrich_cep)(row.Index, row.cep, *args) for row in tqdm_cep)
+    #data = [enrich_cep(row.Index, row.cep, *args) for row in tqdm_cep]
     df_data = pd.DataFrame.from_dict(reduce(dict_merge, data), orient='index')
     return df_cep.join(df_data).fillna(0)
