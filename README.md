@@ -61,7 +61,7 @@ Uma vez definida a geometria de enriquecimento, cada ponto será enriquecido com
 a geometria gerada com os parâmetros escolhidos para cada ponto. Assim, os POIs
 (Points of Interest) serão contados por todos aqueles que estão contidos dentro
 da geometria. Já os valores de sociodemografia e potencial de consumo, será
-feito o cálculo proporcional entre a geometria e os pontos. Para uma maior
+feito o cálculo proporcional entre a geometria e os setores censitários. Para uma maior
 compreensão de como e feito este cálculo proporcional este
 [link](https://medium.com/geo-tech/manipulando-dados-geoespaciais-em-python-9fe21dda5894 "GeoTech") pode ser consultado.
 
