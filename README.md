@@ -37,7 +37,7 @@ respeita o deslocamento nas vias. A diferença reside no fato do valor de
 deslocamento não ser por tempo, mas sim por uma distância em metros. Novamente,
 o deslocamento pode ser feito carro ou a pé.
 
-Abaixo pode ser visto um exemplo da área definida por uma isocota de 1000 metros
+Abaixo pode ser visto um exemplo da área definida por uma isocota de 750 metros
 a partir da esquina da Av. Paulista com a Rua Pamplona.
 
 ![alt text](images/isocota_pe_750_metros.png "Isocota")
