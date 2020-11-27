@@ -2,14 +2,14 @@
 Módulo para realizar o enriquecimento da base da Escale.
 '''
 
-import requests
 import json
 import warnings
 from functools import reduce
+from traceback import format_exc, print_exc
 from datetime import datetime
 from joblib import Parallel, delayed
-from traceback import format_exc, print_exc
 
+import requests
 import pandas as pd
 from tqdm import tqdm
 
@@ -122,7 +122,7 @@ def get_intraurban_cluster(lat, lng, token):
     except Exception as ex:
         return 'Error'
 
-def get_pois(lat, lng, token, dispType, locomotion, direction, value):
+def get_pois(lat, lng, token, disp_type, locomotion, direction, value):
     '''
     Retorna os pontos de interesse (points of interest).
     '''
@@ -130,7 +130,7 @@ def get_pois(lat, lng, token, dispType, locomotion, direction, value):
         base_url = ('https://api.geofusion.com.br/places-enricher/v1/summary/' +
                     '{dispType}?locomotion={locomotion}&value={value}&' +
                     'latitude={lat}&longitude={lng}')
-        base_url = base_url.format(dispType=dispType, locomotion=locomotion,
+        base_url = base_url.format(dispType=disp_type, locomotion=locomotion,
                                    lat=lat, lng=lng, value=value)
         if locomotion != 'WALK':
             base_url += 'direction={direction}'.format(direction=direction)
@@ -231,21 +231,21 @@ def dict_merge(dict_a, dict_b):
     dict_c.update(dict_b)
     return dict_c
 
-def get_point_data(lat, lng, token, dispType, locomotaion, direction, radius,
+def get_point_data(lat, lng, token, disp_type, locomotaion, direction, radius,
                    value, categories):
     '''
     Retorna os dados de determinado ponto
     '''
     seg_intraurban = get_intraurban_segmentation(lat, lng, token)
     renda_dompp_provavel = get_income(lat, lng, token)
-    pois = get_pois(lat, lng, token, dispType, locomotaion, direction, value)
+    pois = get_pois(lat, lng, token, disp_type, locomotaion, direction, value)
     #consumption = get_consumption_potential(lat, lng, token, radius, categories)
     #sociodemography = get_sociodemography(lat, lng, token, radius)
     return {**seg_intraurban, **renda_dompp_provavel, **pois}
             #**consumption, **sociodemography
             #}
 
-def enrich_cep(cep_index, cep, token, dispType, locomotaion, direction, value,
+def enrich_cep(cep_index, cep, token, disp_type, locomotaion, direction, value,
                radius, categories):
     '''
     Enriquece um único cep com os dados da Geofusion.
@@ -254,7 +254,7 @@ def enrich_cep(cep_index, cep, token, dispType, locomotaion, direction, value,
         pt_data = get_point(cep, token)
         if pt_data['geocoder_error'].upper() != 'NONE':
             return {'geocoder_error': pt_data['geocoder_error']}
-        args = (token, dispType, locomotaion, direction, radius, value,
+        args = (token, disp_type, locomotaion, direction, radius, value,
                 categories)
         lat, lng = pt_data['latitude'], pt_data['longitude']
         cep_data = get_point_data(lat, lng, *args)
@@ -265,7 +265,7 @@ def enrich_cep(cep_index, cep, token, dispType, locomotaion, direction, value,
         print_exc()
         return {cep_index: {'Error': True}}
 
-def main(token, n_jobs=10, filename='data/raw/cep.txt', dispType='TIME',
+def main(token, n_jobs=10, filename='data/raw/cep.txt', disp_type='TIME',
          locomotaion='WALK', direction='OUT', value=5, radius=100,
          consumption_potential_category=['pacote_de_telefone_tv_e_internet',
              'telefone_celular', 'telefone_fixo']):
@@ -281,8 +281,47 @@ def main(token, n_jobs=10, filename='data/raw/cep.txt', dispType='TIME',
     token: str
         String com o token API da geofusion.
 
+    n_jobs: int, default=10
+        Número de pontos que serão enriquecidos simultânemente.
+
     filename: str, default='data/raw/cep.txt'
         Caminho do arquivo que contém os ceps dos pontos a serem enriquecidos.
+
+    disp_type: str, default='TIME'
+        Modo que a geometria de enriquecimento do x-ray será gerada. Valores
+        possíveis são ['TIME', 'DISTANCE', 'RADIUS']. Caso seja 'TIME' será
+        gerada uma isócrona. Caso seja 'DISTANCE', será gerada uma isocota (ou
+        isolinha). Caso seja 'RADIUS' será gerado um buffer. Maiores detalhes em
+        https://api.geofusion.com.br/swagger-api/swagger-ui.html?urls.primaryName=xray#/
+
+    locomotion: str, default='WALK'
+        Modo de locomoção escolhido para gerar a geometria. Válido somente se o
+        parâmetro distType for igual à 'TIME', isócrona. Caso não seja este
+        parâmetro é ignorado. Os valores possíveis são ['WALK', 'CAR'] para
+        respectivamente deslocamente à pé ou de carro.
+
+    direction: str, default='OUT'
+        Direção do deslocamento. Os valores podem ser ['IN', 'OUT']. Representa
+        se o descolacamento vai em direção ao ponto ou saindo do ponto.
+
+    value: float, default=5
+        Valor do parâmetro da geometria no x-ray. Este valor está formente
+        relacionado ao parâmetro distType. Caso distType='TIME', então este
+        valor representa o tempo em minutos da isócrona. Caso
+        disp_type='DISTANCE', este parâmetro representa a distância em metros da
+        isocota ou isolinha. Caso distType='RADIUS', é o valor do raio do
+        buffer.
+
+    radius: float, default=100
+        Valor do raio de enriquecimento do potencial de consumo.
+
+    consumption_potential_category: list of str,
+    default=['pacote_de_telefone_tv_e_internet','telefone_celular',
+    'telefone_fixo']
+        Lista de potencial de consumo disponíveis para enriquecimento. Os
+        valores disponíveis podem ser encontrados em
+        https://api.geofusion.com.br/api-docs/ui/#!pt-br/xray/consumepotential/index.md
+
 
     Retorna:
     --------
@@ -290,12 +329,9 @@ def main(token, n_jobs=10, filename='data/raw/cep.txt', dispType='TIME',
     Pandas dataframe com os dados enriquecidos.
     '''
     df_cep = pd.read_csv('data/raw/cep.txt')
-    #df_cep = df_cep.sample(frac=0.01, random_state=42)
-    #df_cep = df_cep.sample(4, random_state=42)
     tqdm_cep = tqdm(df_cep.itertuples(), total=df_cep.shape[0], desc='cep')
-    args = (token, dispType, locomotaion, direction, value, radius,
+    args = (token, disp_type, locomotaion, direction, value, radius,
             consumption_potential_category)
     data = Parallel(n_jobs=n_jobs)(delayed(enrich_cep)(row.Index, row.cep, *args) for row in tqdm_cep)
-    #data = [enrich_cep(row.Index, row.cep, *args) for row in tqdm_cep]
     df_data = pd.DataFrame.from_dict(reduce(dict_merge, data), orient='index')
     return df_cep.join(df_data).fillna(0)
