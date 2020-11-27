@@ -23,7 +23,7 @@ def get_point(cep, token, max_retries=5):
         response = get_response(base_url.format(cep=cep), token)
         data = json.loads(response.text)
         if 'error' in data:
-            return {'geocoder_error', data['error']}
+            return {'geocoder_error': data['error']}
         data['geocoder_error'] = 'None'
         data.pop('address', None)
 
@@ -239,11 +239,11 @@ def get_point_data(lat, lng, token, disp_type, locomotaion, direction, radius,
     seg_intraurban = get_intraurban_segmentation(lat, lng, token)
     renda_dompp_provavel = get_income(lat, lng, token)
     pois = get_pois(lat, lng, token, disp_type, locomotaion, direction, value)
-    #consumption = get_consumption_potential(lat, lng, token, radius, categories)
-    #sociodemography = get_sociodemography(lat, lng, token, radius)
-    return {**seg_intraurban, **renda_dompp_provavel, **pois}
-            #**consumption, **sociodemography
-            #}
+    consumption = get_consumption_potential(lat, lng, token, radius, categories)
+    sociodemography = get_sociodemography(lat, lng, token, radius)
+    return {**seg_intraurban, **renda_dompp_provavel, **pois,
+            **consumption, **sociodemography
+            }
 
 def enrich_cep(cep_index, cep, token, disp_type, locomotaion, direction, value,
                radius, categories):
@@ -328,7 +328,7 @@ def main(token, n_jobs=10, filename='data/raw/cep.txt', disp_type='TIME',
 
     Pandas dataframe com os dados enriquecidos.
     '''
-    df_cep = pd.read_csv('data/raw/cep.txt')
+    df_cep = pd.read_csv(filename)
     tqdm_cep = tqdm(df_cep.itertuples(), total=df_cep.shape[0], desc='cep')
     args = (token, disp_type, locomotaion, direction, value, radius,
             consumption_potential_category)
