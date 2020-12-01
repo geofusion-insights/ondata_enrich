@@ -333,5 +333,7 @@ def main(token, n_jobs=10, filename='data/raw/cep.txt', disp_type='TIME',
     args = (token, disp_type, locomotaion, direction, value, radius,
             consumption_potential_category)
     data = Parallel(n_jobs=n_jobs)(delayed(enrich_cep)(row.Index, row.cep, *args) for row in tqdm_cep)
-    df_data = pd.DataFrame.from_dict(reduce(dict_merge, data), orient='index')
+    data = [i for i in reduce(dict_merge, data) if isinstance(i, dict)]
+    df_data = pd.DataFrame.from_dict(data, orient='index').fillna(0)
     return df_cep.join(df_data).fillna(0)
+    return data
